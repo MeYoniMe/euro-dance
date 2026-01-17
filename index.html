@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KINETIK_ULTIMA_v42_SYNC_INTERACTION</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        :root { --neon: #00f2ff; --rave: #ff0070; --data: #ccff00; }
+        body { 
+            background-color: #000; 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'JetBrains Mono', monospace; 
+            color: #fff;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        /* --- UI DATA-DENSE STUDIO --- */
+        .badge-studio {
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #fff;
+            padding: 8px 18px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: #fff;
+            backdrop-filter: blur(15px);
+            box-shadow: 4px 4px 0px var(--neon);
+        }
+
+        .heart-button {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            background: #fff;
+            border: 3px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            box-shadow: 6px 6px 0px var(--rave);
+            position: relative;
+        }
+
+        .heart-button:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0px var(--rave); }
+        .heart-plus { 
+            position: absolute; top: -5px; right: -5px; background: var(--data); color: #000; 
+            font-size: 12px; font-weight: 900; width: 24px; height: 24px; 
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; 
+            border: 2px solid #000;
+        }
+
+        .panel-tech {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 12px 28px;
+            border-radius: 5px;
+            display: flex;
+            gap: 30px;
+        }
+
+        .label-tech { font-size: 8px; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 800; letter-spacing: 1px; }
+        .val-tech { font-size: 14px; font-weight: 900; color: #fff; line-height: 1; }
+
+        @media (orientation: landscape) {
+            header { padding: 15px 50px !important; }
+            footer { padding: 15px 60px !important; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const MAX_UNITS = 6;
+        const COLORS = ['#00f2ff', '#ff0070', '#ccff00', '#ffffff', '#7000ff', '#ff9900'];
+        const SLOTS = [
+            { x: 0.5, y: 0.70 }, { x: 0.28, y: 0.76 }, { x: 0.72, y: 0.76 },
+            { x: 0.18, y: 0.84 }, { x: 0.82, y: 0.84 }, { x: 0.5, y: 0.90 }
+        ];
+
+        // --- CONSTANTES STRUCTURELLES ---
+        const CUISSE_LEN = 55;
+        const MOLLET_LEN = 55;
+        const SPEED_LIMITER = 0.32; 
+        const SNEAKER_LENGTH = 56;
+        const HEEL_OFFSET = -18; 
+
+        const App = () => {
+            const [isBooted, setIsBooted] = useState(false);
+            const [unitCount, setUnitCount] = useState(1);
+            const [kickPulse, setKickPulse] = useState(0);
+            
+            const canvasRef = useRef(null);
+            const audioRef = useRef({ ctx: null, analyser: null, data: null });
+            const jumpRef = useRef(0);
+            const globalTimeRef = useRef(0);
+            const lastFrameTimeRef = useRef(Date.now());
+
+            const engineRef = useRef({
+                units: [{ 
+                    id: 1, x: 0.5, y: 0.70, color: COLORS[0], state: 'dance', 
+                    offset: 0, greetIdx: -1, slotIdx: 0, isProfile: true, 
+                    isReceivingGreet: false // Nouvel état pour l'interaction
+                }],
+                flashes: []
+            });
+
+            const bootSystem = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    const ctx = new AudioContext();
+                    const analyser = ctx.createAnalyser();
+                    ctx.createMediaStreamSource(stream).connect(analyser);
+                    analyser.fftSize = 512;
+                    analyser.smoothingTimeConstant = 0.8; 
+                    
+                    audioRef.current = { ctx, analyser, data: new Uint8Array(analyser.frequencyBinCount) };
+                    if (ctx.state === 'suspended') await ctx.resume();
+                    if ('wakeLock' in navigator) await navigator.wakeLock.request('screen').catch(e=>{});
+                    
+                    setIsBooted(true);
+                    startEngine();
+                } catch (err) {
+                    alert("ERREUR_AUDIO_VJ: Signal requis.");
+                }
+            };
+
+            const startEngine = () => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+
+                const loop = () => {
+                    const { analyser, data } = audioRef.current;
+                    if (!analyser) return;
+
+                    const now = Date.now();
+                    const dt = (now - lastFrameTimeRef.current) / 1000;
+                    lastFrameTimeRef.current = now;
+
+                    analyser.getByteFrequencyData(data);
+                    
+                    // ISOLATION BASSES (30-60Hz)
+                    const bass = (data[0] + data[1] + data[2]) / 3;
+                    const vol = data.reduce((a, b) => a + b) / data.length;
+                    
+                    // TEMPO SCALE
+                    const tempoScale = Math.max(0.6, Math.pow(bass/255, 2.0) * 3.0);
+                    globalTimeRef.current += dt * tempoScale * SPEED_LIMITER;
+
+                    // SAUT
+                    const gatedBass = bass < 45 ? 0 : bass;
+                    const targetJump = Math.pow(gatedBass / 255, 4.0) * 150;
+                    jumpRef.current += (targetJump - jumpRef.current) * 0.15;
+                    setKickPulse(bass);
+
+                    ctx.fillStyle = '#050505';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    // --- PISTE DE DANSE AMÉLIORÉE ---
+                    drawAdvancedFloor(ctx, canvas, bass);
+
+                    const sorted = [...engineRef.current.units].sort((a, b) => a.y - b.y);
+
+                    sorted.forEach((u) => {
+                        updateLogic(u, engineRef.current.units, dt);
+                        drawShadow(ctx, canvas, u, jumpRef.current);
+                    });
+
+                    sorted.forEach((u) => {
+                        drawSkeletonDancer(ctx, canvas, u, jumpRef.current, vol, bass, globalTimeRef.current);
+                    });
+
+                    drawVFX(ctx, canvas);
+                    requestAnimationFrame(loop);
+                };
+                loop();
+            };
+
+            const updateLogic = (u, allUnits, dt) => {
+                if (u.state === 'greeting') {
+                    const targets = allUnits.filter(f => f.id < u.id);
+                    const cur = targets[u.greetIdx];
+                    if (!cur) { u.state = 'moving_to_slot'; return; }
+                    
+                    const tx = cur.x, ty = cur.y + 0.08; 
+                    const dx = tx - u.x, dy = ty - u.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+
+                    // Si on est assez proche pour le check
+                    if (dist < 0.1) {
+                        cur.isReceivingGreet = true; // L'ancien lève aussi la main
+                    } else {
+                        cur.isReceivingGreet = false;
+                    }
+
+                    if (dist < 0.015) {
+                        engineRef.current.flashes.push({ x: u.x, y: u.y - 0.12, life: 1.0, color: u.color });
+                        cur.isReceivingGreet = false; // Fin de l'interaction pour l'ancien
+                        u.greetIdx++;
+                        if (u.greetIdx >= targets.length) u.state = 'moving_to_slot';
+                    } else {
+                        u.x += (dx / dist) * 0.0012; u.y += (dy / dist) * 0.0012;
+                    }
+                } else if (u.state === 'moving_to_slot') {
+                    const slot = SLOTS[u.slotIdx];
+                    const dx = slot.x - u.x, dy = slot.y - u.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 0.005) u.state = 'dance';
+                    else { u.x += (dx / dist) * 0.0028; u.y += (dy / dist) * 0.0028; }
+                } else if (u.state === 'dance') {
+                    const base = SLOTS[u.slotIdx];
+                    const drift = Math.sin(globalTimeRef.current * 1.5 + u.offset) * 0.04;
+                    u.x += (base.x + drift - u.x) * 0.012;
+                    u.y += (base.y - u.y) * 0.012;
+                }
+            };
+
+            const drawAdvancedFloor = (ctx, canvas, bass) => {
+                const hY = canvas.height * 0.44;
+                ctx.save();
+                
+                // Grille de perspective lumineuse
+                ctx.strokeStyle = `rgba(255, 255, 255, ${0.02 + bass/1500})`;
+                ctx.lineWidth = 1;
+                for(let i = -20; i <= 20; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(canvas.width/2 + (i * 450), canvas.height);
+                    ctx.lineTo(canvas.width/2 + (i * 8), hY);
+                    ctx.stroke();
+                }
+
+                // Dalles lumineuses (Pattern Rave)
+                const gridStep = 80;
+                const offset = (Date.now() / 60) % gridStep;
+                for(let j = 0; j < 12; j++) {
+                    const py = hY + Math.pow(j/12, 3.2) * (canvas.height - hY);
+                    ctx.beginPath();
+                    ctx.moveTo(0, py); ctx.lineTo(canvas.width, py);
+                    ctx.strokeStyle = `rgba(0, 242, 255, ${0.05 + (j/12) * (bass/300)})`;
+                    ctx.stroke();
+                    
+                    // Carrés de bloom aléatoires sur la piste
+                    if (bass > 180 && Math.random() > 0.98) {
+                        ctx.fillStyle = `rgba(255, 255, 255, 0.1)`;
+                        ctx.fillRect(Math.random() * canvas.width, py, 100, 2);
+                    }
+                }
+                ctx.restore();
+            };
+
+            const drawShadow = (ctx, canvas, u, jump) => {
+                const x = u.x * canvas.width;
+                const gy = u.y * canvas.height;
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.beginPath();
+                ctx.ellipse(x, gy + 25, 45 + jump/20, 10, 0, 0, Math.PI * 2);
+                ctx.fill();
+            };
+
+            // --- IK SOLVER RIGIDE ---
+            const solveNaturalIK = (tx, ty, hx, hy, a, b) => {
+                const dx = tx - hx, dy = ty - hy;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                const dMax = a + b - 1;
+                let fx = tx, fy = ty;
+                if (d > dMax) {
+                    const r = dMax / d;
+                    fx = hx + dx * r;
+                    fy = hy + dy * r;
+                }
+                const finalDx = fx - hx, finalDy = fy - hy;
+                const finalD = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
+                const anglePied = Math.atan2(finalDy, finalDx);
+                const flip = 1; 
+                const cosA = (a * a + finalD * finalD - b * b) / (2 * a * finalD);
+                const angleA = Math.acos(Math.max(-1, Math.min(1, cosA)));
+                const jointAngle = anglePied - angleA * flip;
+                return { kx: hx + Math.cos(jointAngle) * a, ky: hy + Math.sin(jointAngle) * a, fx, fy };
+            };
+
+            const drawToonVolume = (ctx, x1, y1, x2, y2, w1, w2, color) => {
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                const perp = angle + Math.PI/2;
+                const p1x = x1 + Math.cos(perp) * w1/2, p1y = y1 + Math.sin(perp) * w1/2;
+                const p2x = x1 - Math.cos(perp) * w1/2, p2y = y1 - Math.sin(perp) * w1/2;
+                const p3x = x2 - Math.cos(perp) * w2/2, p3y = y2 - Math.sin(perp) * w2/2;
+                const p4x = x2 + Math.cos(perp) * w2/2, p4y = y2 + Math.sin(perp) * w2/2;
+                ctx.beginPath();
+                ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y); ctx.lineTo(p3x, p3y); ctx.lineTo(p4x, p4y);
+                ctx.closePath();
+                ctx.fillStyle = color; ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.stroke();
+            };
+
+            const drawSkeletonDancer = (ctx, canvas, u, jump, vol, bass, time) => {
+                const isWalking = u.state === 'greeting' || u.state === 'moving_to_slot';
+                const isP = u.isProfile;
+                const t = time + u.offset;
+                const x = u.x * canvas.width;
+                const gy = u.y * canvas.height;
+                const torsoH = 80;
+                const hipY = gy - (CUISSE_LEN + MOLLET_LEN) - jump; 
+                
+                ctx.save();
+                const headR = 26;
+                const sway = isWalking ? Math.sin(t * 12) * 12 : Math.sin(t * 8) * 6;
+
+                // --- TÊTE ---
+                ctx.beginPath();
+                ctx.arc(x + sway, hipY - torsoH - headR - 15, headR, 0, Math.PI * 2);
+                ctx.fillStyle = u.color; ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 5; ctx.stroke();
+                // Visière
+                ctx.fillStyle = "#000";
+                const vW = isP ? headR * 0.6 : headR * 1.0;
+                ctx.fillRect(x + sway - (isP ? 0 : vW/2), hipY - torsoH - headR - 20, vW, 8);
+
+                // --- BUSTE ---
+                drawToonVolume(ctx, x, hipY - torsoH, x, hipY, isP ? 28 : 46, isP ? 18 : 32, u.color);
+
+                // --- BRAS (AVEC LOGIQUE D'INTERACTION MIROIR) ---
+                const drawArm = (side) => {
+                    const isFar = side === 'L' && isP;
+                    const ph = (t * 12) + (side === 'R' ? Math.PI : 0);
+                    let ex, ey, wx, wy;
+
+                    // Si on salue OU si on reçoit un salut, on lève la main droite
+                    if ((u.state === 'greeting' && side === 'R') || (u.isReceivingGreet && side === 'R')) {
+                        ex = x + 45; ey = hipY - 75;
+                        wx = ex + 30; wy = ey - 85; // Bras levé en check
+                    } 
+                    else if (u.state === 'greeting' && side === 'L') {
+                        ex = x - 25; ey = hipY - 40;
+                        wx = ex - 20; wy = ey + 30; // Bras gauche au repos pendant le check
+                    }
+                    else if (u.isReceivingGreet && side === 'L') {
+                        ex = x - 25; ey = hipY - 40;
+                        wx = ex - 20; wy = ey + 30;
+                    }
+                    else {
+                        const am = isP ? 0.6 : 1.0;
+                        ex = x + (side === 'R' ? 55 : -55) * am + Math.cos(ph) * 15;
+                        ey = hipY - 45 + Math.sin(ph) * 12;
+                        wx = ex + Math.cos(ph * 1.1) * 35;
+                        wy = ey + Math.sin(ph * 1.1) * 35;
+                    }
+                    
+                    if (isFar) ctx.globalAlpha = 0.35;
+                    drawToonVolume(ctx, x + (isP ? 0 : (side === 'R' ? 22 : -22)), hipY - torsoH + 15, ex, ey, 16, 12, u.color);
+                    drawToonVolume(ctx, ex, ey, wx, wy, 12, 10, u.color);
+                    ctx.globalAlpha = 1.0;
+                };
+                drawArm('L'); drawArm('R');
+
+                // --- JAMBES (VERROUILLÉES v41) ---
+                const drawLeg = (side) => {
+                    const isFar = side === 'L' && isP;
+                    const ph = (t * 12) + (side === 'R' ? Math.PI : 0);
+                    const cycle = ph % (Math.PI * 2);
+                    const isLift = cycle < Math.PI;
+                    
+                    let targetFootX, targetFootY;
+                    if (isWalking) {
+                        const s = Math.sin((t * 12) + (side === 'R' ? Math.PI : 0));
+                        targetFootX = x + (isP ? s * 55 : (side === 'R' ? 22 : -22) + s * 35);
+                        targetFootY = gy - (s > 0 ? s * 35 : 0); 
+                    } else if (u.isReceivingGreet) {
+                        // L'ancien s'arrête de danser et pose ses pieds au sol pour le check
+                        targetFootX = x + (side === 'R' ? 20 : -20);
+                        targetFootY = gy;
+                    } else {
+                        const lift = isLift ? Math.sin(cycle) : 0;
+                        const slide = !isLift ? Math.cos(cycle) : Math.cos(cycle) * 0.4;
+                        targetFootX = x + (isP ? slide * 95 : (side === 'R' ? 44 : -44) + slide * 25);
+                        const targetLift = lift * 85 * (0.3 + (bass/255) * 0.7);
+                        targetFootY = gy - targetLift;
+                    }
+
+                    const hipPosX = x + (isP ? 0 : (side === 'R' ? 16 : -16));
+                    const res = solveNaturalIK(targetFootX, targetFootY, hipPosX, hipY, CUISSE_LEN, MOLLET_LEN);
+
+                    if (isFar) ctx.globalAlpha = 0.35;
+                    const molletW = isFar ? 20 : 24; 
+                    const cuisseW = isFar ? 28 : 32;
+
+                    drawToonVolume(ctx, hipPosX, hipY, res.kx, res.ky, cuisseW, molletW, u.color);
+                    drawToonVolume(ctx, res.kx, res.ky, res.fx, res.fy, molletW, isFar ? 14 : 18, u.color);
+
+                    const shoeX = res.fx - (HEEL_OFFSET); 
+                    const shoeY = res.fy;
+                    ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+                    ctx.beginPath(); ctx.roundRect(shoeX - SNEAKER_LENGTH/2, shoeY - 2, SNEAKER_LENGTH, 12, 4); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = u.color;
+                    ctx.beginPath(); ctx.roundRect(shoeX - SNEAKER_LENGTH/2 + 2, shoeY - 14, SNEAKER_LENGTH - 8, 12, 4); ctx.fill(); ctx.stroke();
+                    
+                    ctx.globalAlpha = 1.0;
+                };
+                drawLeg('L'); drawLeg('R');
+                ctx.restore();
+            };
+
+            const drawVFX = (ctx, canvas) => {
+                engineRef.current.flashes = engineRef.current.flashes.filter(f => f.life > 0);
+                engineRef.current.flashes.forEach(f => {
+                    ctx.save();
+                    ctx.beginPath(); ctx.arc(f.x * canvas.width, f.y * canvas.height, (1 - f.life) * 250, 0, Math.PI*2);
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${f.life})`;
+                    ctx.lineWidth = 5; ctx.stroke();
+                    f.life -= 0.045; ctx.restore();
+                });
+            };
+
+            const addFriend = () => {
+                if (engineRef.current.units.length >= MAX_UNITS) return;
+                engineRef.current.units.push({
+                    id: Date.now(), x: -0.15, y: 0.82,
+                    color: COLORS[engineRef.current.units.length % COLORS.length],
+                    state: 'greeting', offset: Math.random() * 10,
+                    slotIdx: engineRef.current.units.length, greetIdx: 0, isProfile: true,
+                    isReceivingGreet: false
+                });
+                setUnitCount(engineRef.current.units.length);
+            };
+
+            useEffect(() => {
+                const res = () => { if(canvasRef.current){ canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; }};
+                window.addEventListener('resize', res); res();
+                return () => window.removeEventListener('resize', res);
+            }, []);
+
+            return (
+                <div className="relative h-screen w-full bg-black overflow-hidden flex flex-col">
+                    <header className="z-50 p-6 flex justify-between items-center pointer-events-none">
+                        <div className="badge-studio shadow-xl">KINETIK_v42_INTERACTIVE</div>
+                        <div className="panel-tech shadow-2xl border-white/20">
+                            <div className="flex flex-col"><span className="label-tech">Interaction_Sync</span><span className="val-tech">ENABLED</span></div>
+                            <div className="flex flex-col"><span className="label-tech">Z-Sync Flow</span><span className="val-tech text-[#ccff00]">ACTIVE</span></div>
+                        </div>
+                    </header>
+                    <main className="absolute inset-0 z-10">
+                        <canvas ref={canvasRef} />
+                    </main>
+                    <footer className="z-50 p-8 sm:p-14 flex justify-between items-center">
+                        <div className="flex gap-3 h-12 bg-white/5 p-4 rounded-[2rem] border-2 border-white/10 shadow-inner">
+                            {isBooted && Array.from({length: 10}).map((_, i) => (
+                                <div key={i} className="w-1.5 bg-black/40 rounded-full relative overflow-hidden">
+                                    <div className="absolute bottom-0 w-full bg-white transition-all duration-75" 
+                                         style={{ height: `${Math.min(100, (audioRef.current.data[i*12] || 0) / 2.2)}%` }} />
+                                </div>
+                            ))}
+                        </div>
+                        {!isBooted ? (
+                            <button onClick={bootSystem} className="px-16 py-6 bg-white text-black font-black text-xl rounded shadow-[8px_8px_0_var(--neon)] active:translate-y-1 active:shadow-none uppercase tracking-[0.2em] border-4 border-black">
+                                BOOT_ELITE_v42
+                            </button>
+                        ) : (
+                            <div onClick={addFriend} className={`heart-button ${unitCount >= MAX_UNITS ? 'opacity-20 pointer-events-none' : ''}`}>
+                                <svg width="34" height="34" viewBox="0 0 24 24" fill="#ff0070"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                                <div className="heart-plus">+</div>
+                            </div>
+                        )}
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
