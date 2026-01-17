@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KINETIK_ULTIMA_v42_SYNC_INTERACTION</title>
+    <title>KINETIK_ULTIMA_v43_SYNC_PRO</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,16 +29,16 @@
             touch-action: none;
         }
 
-        /* --- UI DATA-DENSE STUDIO --- */
+        /* --- INTERFACE DATA-DENSE STUDIO --- */
         .badge-studio {
             background: rgba(0, 0, 0, 0.9);
             border: 2px solid #fff;
             padding: 8px 18px;
             border-radius: 4px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 900;
             text-transform: uppercase;
-            letter-spacing: 4px;
+            letter-spacing: 3px;
             color: #fff;
             backdrop-filter: blur(15px);
             box-shadow: 4px 4px 0px var(--neon);
@@ -62,7 +62,7 @@
         .heart-button:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0px var(--rave); }
         .heart-plus { 
             position: absolute; top: -5px; right: -5px; background: var(--data); color: #000; 
-            font-size: 12px; font-weight: 900; width: 24px; height: 24px; 
+            font-size: 11px; font-weight: 900; width: 22px; height: 22px; 
             border-radius: 50%; display: flex; align-items: center; justify-content: center; 
             border: 2px solid #000;
         }
@@ -70,19 +70,19 @@
         .panel-tech {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(25px);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             padding: 12px 28px;
             border-radius: 5px;
             display: flex;
-            gap: 30px;
+            gap: 25px;
         }
 
-        .label-tech { font-size: 8px; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 800; letter-spacing: 1px; }
-        .val-tech { font-size: 14px; font-weight: 900; color: #fff; line-height: 1; }
+        .label-tech { font-size: 7px; text-transform: uppercase; color: rgba(255,255,255,0.4); font-weight: 800; letter-spacing: 1px; }
+        .val-tech { font-size: 13px; font-weight: 900; color: #fff; line-height: 1; }
 
         @media (orientation: landscape) {
-            header { padding: 15px 50px !important; }
-            footer { padding: 15px 60px !important; }
+            header { padding: 12px 50px !important; }
+            footer { padding: 12px 60px !important; }
         }
     </style>
 </head>
@@ -99,10 +99,10 @@
             { x: 0.18, y: 0.84 }, { x: 0.82, y: 0.84 }, { x: 0.5, y: 0.90 }
         ];
 
-        // --- CONSTANTES STRUCTURELLES ---
+        // --- BONE CONSTANTS (VERROUILLAGE SQUELETTE) ---
         const CUISSE_LEN = 55;
         const MOLLET_LEN = 55;
-        const SPEED_LIMITER = 0.32; 
+        const SPEED_LIMITER = 0.30; 
         const SNEAKER_LENGTH = 56;
         const HEEL_OFFSET = -18; 
 
@@ -120,12 +120,13 @@
             const engineRef = useRef({
                 units: [{ 
                     id: 1, x: 0.5, y: 0.70, color: COLORS[0], state: 'dance', 
-                    offset: 0, greetIdx: -1, slotIdx: 0, isProfile: true, 
-                    isReceivingGreet: false // Nouvel état pour l'interaction
+                    offset: 0, greetIdx: -1, slotIdx: 0, isProfile: true,
+                    isReceivingGreet: false 
                 }],
                 flashes: []
             });
 
+            // --- BOOT ENGINE ---
             const bootSystem = async () => {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -143,7 +144,9 @@
                     setIsBooted(true);
                     startEngine();
                 } catch (err) {
-                    alert("ERREUR_AUDIO_VJ: Signal requis.");
+                    // Fallback Mode pour iPhone si le micro est coupé par YouTube
+                    setIsBooted(true);
+                    startEngine();
                 }
             };
 
@@ -153,19 +156,26 @@
 
                 const loop = () => {
                     const { analyser, data } = audioRef.current;
-                    if (!analyser) return;
-
                     const now = Date.now();
                     const dt = (now - lastFrameTimeRef.current) / 1000;
                     lastFrameTimeRef.current = now;
 
-                    analyser.getByteFrequencyData(data);
+                    let bass = 0;
+                    let vol = 0;
+
+                    if (analyser) {
+                        analyser.getByteFrequencyData(data);
+                        bass = (data[0] + data[1] + data[2]) / 3;
+                        vol = data.reduce((a, b) => a + b) / data.length;
+                    } else {
+                        // SIMULATEUR DE PULSE (iOS Workaround)
+                        // Crée un kick artificiel à 128 BPM si Safari a coupé YouTube
+                        const pulse = Math.pow(Math.abs(Math.sin(now / 468 * Math.PI)), 10);
+                        bass = pulse * 255;
+                        vol = pulse * 50;
+                    }
                     
-                    // ISOLATION BASSES (30-60Hz)
-                    const bass = (data[0] + data[1] + data[2]) / 3;
-                    const vol = data.reduce((a, b) => a + b) / data.length;
-                    
-                    // TEMPO SCALE
+                    // TEMPO SCALE NERVEUX
                     const tempoScale = Math.max(0.6, Math.pow(bass/255, 2.0) * 3.0);
                     globalTimeRef.current += dt * tempoScale * SPEED_LIMITER;
 
@@ -178,7 +188,7 @@
                     ctx.fillStyle = '#050505';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                    // --- PISTE DE DANSE AMÉLIORÉE ---
+                    // PISTE DE DANSE ÉLÉGANTE
                     drawAdvancedFloor(ctx, canvas, bass);
 
                     const sorted = [...engineRef.current.units].sort((a, b) => a.y - b.y);
@@ -208,16 +218,16 @@
                     const dx = tx - u.x, dy = ty - u.y;
                     const dist = Math.sqrt(dx*dx + dy*dy);
 
-                    // Si on est assez proche pour le check
-                    if (dist < 0.1) {
-                        cur.isReceivingGreet = true; // L'ancien lève aussi la main
+                    // --- LOGIQUE INTERACTION MIROIR ---
+                    if (dist < 0.12) {
+                        cur.isReceivingGreet = true; // L'ancien lève la main
                     } else {
                         cur.isReceivingGreet = false;
                     }
 
                     if (dist < 0.015) {
                         engineRef.current.flashes.push({ x: u.x, y: u.y - 0.12, life: 1.0, color: u.color });
-                        cur.isReceivingGreet = false; // Fin de l'interaction pour l'ancien
+                        cur.isReceivingGreet = false;
                         u.greetIdx++;
                         if (u.greetIdx >= targets.length) u.state = 'moving_to_slot';
                     } else {
@@ -241,8 +251,8 @@
                 const hY = canvas.height * 0.44;
                 ctx.save();
                 
-                // Grille de perspective lumineuse
-                ctx.strokeStyle = `rgba(255, 255, 255, ${0.02 + bass/1500})`;
+                // Perspective Grid
+                ctx.strokeStyle = `rgba(255, 255, 255, ${0.01 + bass/2000})`;
                 ctx.lineWidth = 1;
                 for(let i = -20; i <= 20; i++) {
                     ctx.beginPath();
@@ -251,21 +261,14 @@
                     ctx.stroke();
                 }
 
-                // Dalles lumineuses (Pattern Rave)
-                const gridStep = 80;
-                const offset = (Date.now() / 60) % gridStep;
-                for(let j = 0; j < 12; j++) {
-                    const py = hY + Math.pow(j/12, 3.2) * (canvas.height - hY);
+                // Neon Dalles (Kick Reactives)
+                for(let j = 0; j < 10; j++) {
+                    const py = hY + Math.pow(j/10, 3.2) * (canvas.height - hY);
                     ctx.beginPath();
                     ctx.moveTo(0, py); ctx.lineTo(canvas.width, py);
-                    ctx.strokeStyle = `rgba(0, 242, 255, ${0.05 + (j/12) * (bass/300)})`;
+                    ctx.strokeStyle = `rgba(0, 242, 255, ${0.02 + (bass/400) * (j/10)})`;
+                    ctx.lineWidth = 1 + (bass/100);
                     ctx.stroke();
-                    
-                    // Carrés de bloom aléatoires sur la piste
-                    if (bass > 180 && Math.random() > 0.98) {
-                        ctx.fillStyle = `rgba(255, 255, 255, 0.1)`;
-                        ctx.fillRect(Math.random() * canvas.width, py, 100, 2);
-                    }
                 }
                 ctx.restore();
             };
@@ -279,7 +282,7 @@
                 ctx.fill();
             };
 
-            // --- IK SOLVER RIGIDE ---
+            // --- IK SOLVER RIGIDE SANS ÉTIRAGE ---
             const solveNaturalIK = (tx, ty, hx, hy, a, b) => {
                 const dx = tx - hx, dy = ty - hy;
                 const d = Math.sqrt(dx * dx + dy * dy);
@@ -340,7 +343,7 @@
                 // --- BUSTE ---
                 drawToonVolume(ctx, x, hipY - torsoH, x, hipY, isP ? 28 : 46, isP ? 18 : 32, u.color);
 
-                // --- BRAS (AVEC LOGIQUE D'INTERACTION MIROIR) ---
+                // --- BRAS (AVEC INTERACTION MIROIR) ---
                 const drawArm = (side) => {
                     const isFar = side === 'L' && isP;
                     const ph = (t * 12) + (side === 'R' ? Math.PI : 0);
@@ -349,24 +352,14 @@
                     // Si on salue OU si on reçoit un salut, on lève la main droite
                     if ((u.state === 'greeting' && side === 'R') || (u.isReceivingGreet && side === 'R')) {
                         ex = x + 45; ey = hipY - 75;
-                        wx = ex + 30; wy = ey - 85; // Bras levé en check
-                    } 
-                    else if (u.state === 'greeting' && side === 'L') {
-                        ex = x - 25; ey = hipY - 40;
-                        wx = ex - 20; wy = ey + 30; // Bras gauche au repos pendant le check
-                    }
-                    else if (u.isReceivingGreet && side === 'L') {
-                        ex = x - 25; ey = hipY - 40;
-                        wx = ex - 20; wy = ey + 30;
-                    }
-                    else {
+                        wx = ex + 30; wy = ey - 85; 
+                    } else {
                         const am = isP ? 0.6 : 1.0;
                         ex = x + (side === 'R' ? 55 : -55) * am + Math.cos(ph) * 15;
                         ey = hipY - 45 + Math.sin(ph) * 12;
                         wx = ex + Math.cos(ph * 1.1) * 35;
                         wy = ey + Math.sin(ph * 1.1) * 35;
                     }
-                    
                     if (isFar) ctx.globalAlpha = 0.35;
                     drawToonVolume(ctx, x + (isP ? 0 : (side === 'R' ? 22 : -22)), hipY - torsoH + 15, ex, ey, 16, 12, u.color);
                     drawToonVolume(ctx, ex, ey, wx, wy, 12, 10, u.color);
@@ -374,7 +367,7 @@
                 };
                 drawArm('L'); drawArm('R');
 
-                // --- JAMBES (VERROUILLÉES v41) ---
+                // --- JAMBES (BALANCED v41 + INTERACTION) ---
                 const drawLeg = (side) => {
                     const isFar = side === 'L' && isP;
                     const ph = (t * 12) + (side === 'R' ? Math.PI : 0);
@@ -387,7 +380,7 @@
                         targetFootX = x + (isP ? s * 55 : (side === 'R' ? 22 : -22) + s * 35);
                         targetFootY = gy - (s > 0 ? s * 35 : 0); 
                     } else if (u.isReceivingGreet) {
-                        // L'ancien s'arrête de danser et pose ses pieds au sol pour le check
+                        // L'ancien s'arrête de danser et se stabilise pour le check
                         targetFootX = x + (side === 'R' ? 20 : -20);
                         targetFootY = gy;
                     } else {
@@ -414,7 +407,6 @@
                     ctx.beginPath(); ctx.roundRect(shoeX - SNEAKER_LENGTH/2, shoeY - 2, SNEAKER_LENGTH, 12, 4); ctx.fill(); ctx.stroke();
                     ctx.fillStyle = u.color;
                     ctx.beginPath(); ctx.roundRect(shoeX - SNEAKER_LENGTH/2 + 2, shoeY - 14, SNEAKER_LENGTH - 8, 12, 4); ctx.fill(); ctx.stroke();
-                    
                     ctx.globalAlpha = 1.0;
                 };
                 drawLeg('L'); drawLeg('R');
@@ -453,9 +445,9 @@
             return (
                 <div className="relative h-screen w-full bg-black overflow-hidden flex flex-col">
                     <header className="z-50 p-6 flex justify-between items-center pointer-events-none">
-                        <div className="badge-studio shadow-xl">KINETIK_v42_INTERACTIVE</div>
+                        <div className="badge-studio shadow-xl">KINETIK_v43_SYNC</div>
                         <div className="panel-tech shadow-2xl border-white/20">
-                            <div className="flex flex-col"><span className="label-tech">Interaction_Sync</span><span className="val-tech">ENABLED</span></div>
+                            <div className="flex flex-col"><span className="label-tech">Dual_HighFive</span><span className="val-tech">ENABLED</span></div>
                             <div className="flex flex-col"><span className="label-tech">Z-Sync Flow</span><span className="val-tech text-[#ccff00]">ACTIVE</span></div>
                         </div>
                     </header>
@@ -473,7 +465,7 @@
                         </div>
                         {!isBooted ? (
                             <button onClick={bootSystem} className="px-16 py-6 bg-white text-black font-black text-xl rounded shadow-[8px_8px_0_var(--neon)] active:translate-y-1 active:shadow-none uppercase tracking-[0.2em] border-4 border-black">
-                                BOOT_ELITE_v42
+                                BOOT_ELITE_v43
                             </button>
                         ) : (
                             <div onClick={addFriend} className={`heart-button ${unitCount >= MAX_UNITS ? 'opacity-20 pointer-events-none' : ''}`}>
